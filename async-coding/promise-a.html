@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+<body>
+  <script>
+    // utils
+    function isType(type) {
+      let typeStr = `[object ${type}]`
+      return function(obj) {
+        return Object.prototype.toString.call(obj) === typeStr
+      }
+    }
+    const isFunction = isType('Function')
+
+
+    // promise instance
+    function PromiseState() {
+      this.state = 'pending'
+      this.value = undefined
+      this.reason = undefined
+      this.then = function(onResolved, onRejected) {
+        if (!isFunction(onResolved) || !isFunction(onRejected)) {
+          throw new Error('the params of "then" function should be a function')
+        } else {
+          this.onResolved = onResolved
+          this.onRejected = onRejected
+        }
+      }
+    }
+    function resolve(promiseState, value) {
+      if (promiseState.state === 'pending') {
+        promiseState.value = value
+        promiseState.state = 'resolved'
+
+        // 返回值做检查，不同值做不同处理
+        promiseState.onResolved(promiseState.value)
+      } else {
+        throw new Error('the state is not "pending", can not be resolved')
+      }
+    }
+    function reject(promiseState, reason) {
+      if (promiseState.state === 'pending') {
+        promiseState.reason = reason
+        promiseState.state = 'rejected'
+        promiseState.onRejected(promiseState.reason)
+      } else {
+        throw new Error('the state is not "pending", can not be rejected')
+      }
+    }
+    function PromiseA(asyncFunc) {
+      // Object.assign(PromiseA.prototype, {
+      //   reject: 
+      //   resolve: 
+      // })
+      
+      const promiseState = new PromiseState()
+      if (asyncFunc && isFunction(asyncFunc)) {
+        asyncFunc((value) => resolve(promiseState, value), (reason) => reject(promiseState, reason));
+      } else if (!isFunction(asyncFunc)) {
+        throw new Error(`Promise resolver ${asyncFunc} is not a "function"`)
+      }
+      return promiseState
+    }
+    const p = new PromiseA(function(resolve, reject) {
+      // console.log('init promise')
+      setTimeout(function() { resolve('resolve') }, 0)
+    })
+    p.then((value) => {
+      console.log(value, 'value')
+    }, (reason) => {
+      console.log(reason, 'reason')
+    })
+    console.log('sync code')
+    // p.resolve('123')
+  </script>
+</body>
+</html>
