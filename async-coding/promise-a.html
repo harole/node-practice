@@ -8,6 +8,11 @@
 </head>
 <body>
   <script>
+    // todo
+    // 1. resolve\reject 处理
+    // 2. state 恒等处理
+
+
     // utils
     function isType(type) {
       let typeStr = `[object ${type}]`
@@ -23,41 +28,113 @@
       this.state = 'pending'
       this.value = undefined
       this.reason = undefined
-      this.then = function(onResolved, onRejected) {
-        if (!isFunction(onResolved) || !isFunction(onRejected)) {
-          throw new Error('the params of "then" function should be a function')
-        } else {
-          this.onResolved = onResolved
-          this.onRejected = onRejected
+      this.then = (onResolved, onRejected) => {
+        this.nextP = new PromiseState()
+
+        // 初始化正常的回调函数
+        if (onResolved && isFunction(onResolved)) {
+          this.onResolved = (value) => {
+            try {
+              const resolvedValue = onResolved(value)
+              if (resolvedValue instanceof PromiseState) { // 
+                resolvedValue.then(this.nextP.onResolved, this.nextP.onRejected)
+                this.nextP = resolvedValue
+              } else if (typeof resolvedValue !== 'undefined') {
+                // resolve(this.nextP, resolvedValue)
+                this.nextP.onResolved(resolvedValue)
+              } else {
+                // resolve(this.nextP, value)
+                this.nextP.onResolved(value)
+              }
+            } catch (e) {
+              // 变量 Promise 链，找到 onRejected 进行执行
+              let nextP = this.nextP
+              while (nextP && !nextP.onRejected) {
+                nextP = nextP.nextP
+              }
+              if (nextP && nextP.onRejected) {
+                nextP.onRejected(e)
+              }
+            }
+          }
         }
+        
+        // 初始化异常的回调函数
+        if (onRejected && isFunction(onRejected)) {
+          this.onRejected = (reason) => {
+            try {
+              const resolvedValue = onRejected(reason)
+              if (resolvedValue instanceof PromiseState) {
+                resolvedValue.then(this.nextP.onResolved, this.nextP.onRejected)
+                this.nextP = resolvedValue
+              } else if (typeof resolvedValue !== 'undefined') {
+                // resolve(this.nextP, resolvedValue)
+                this.nextP.onResolved(resolvedValue)
+              } else {
+                // reject(this.nextP, reason)
+                this.nextP.onRejected(reason)
+              }
+            } catch (e) {
+              // 变量 Promise 链，找到 onRejected 进行执行
+              let nextP = this.nextP
+              while (nextP && !nextP.onRejected) {
+                nextP = nextP.nextP
+              }
+              if (nextP && nextP.onRejected) {
+                nextP.onRejected(e)
+              }
+            }
+          }
+        }
+
+        // 判断是否执行正常回调函数
+        if (this.state === 'fulfilled' && this.onResolved) {
+          setTimeout(() => {
+            this.onResolved(this.value)
+          }, 0)
+        } else if (this.state === 'fulfilled') { // 不存在 onResolved
+          resolve(this.nextP, this.value)
+        }
+
+        // 判断是否执行异常回调函数
+        if (this.state === 'rejected' && this.onRejected) {
+          setTimeout(() => {
+            this.onRejected(this.reason)
+          }, 0)
+        } else if (this.state === 'rejected') { // 不存在 onRejected
+          reject(this.nextP, this.value)
+        }
+
+        return this.nextP // 返回下一个 Promise 实例，构成 Promise 调用链
       }
     }
     function resolve(promiseState, value) {
       if (promiseState.state === 'pending') {
         promiseState.value = value
-        promiseState.state = 'resolved'
-
-        // 返回值做检查，不同值做不同处理
-        promiseState.onResolved(promiseState.value)
+        promiseState.state = 'fulfilled'
+        if (promiseState.onResolved) {
+          setTimeout(() => {
+            promiseState.onResolved(promiseState.value)
+          }, 0)  
+        }
       } else {
-        throw new Error('the state is not "pending", can not be resolved')
+        throw new Error('the state is not "pending", can not be resolved.')
       }
     }
     function reject(promiseState, reason) {
       if (promiseState.state === 'pending') {
         promiseState.reason = reason
         promiseState.state = 'rejected'
-        promiseState.onRejected(promiseState.reason)
+        if (promiseState.onRejected) {
+          setTimeout(() => {
+            promiseState.onRejected(promiseState.reason)
+          }, 0)  
+        }
       } else {
         throw new Error('the state is not "pending", can not be rejected')
       }
     }
     function PromiseA(asyncFunc) {
-      // Object.assign(PromiseA.prototype, {
-      //   reject: 
-      //   resolve: 
-      // })
-      
       const promiseState = new PromiseState()
       if (asyncFunc && isFunction(asyncFunc)) {
         asyncFunc((value) => resolve(promiseState, value), (reason) => reject(promiseState, reason));
@@ -66,17 +143,66 @@
       }
       return promiseState
     }
-    const p = new PromiseA(function(resolve, reject) {
-      // console.log('init promise')
-      setTimeout(function() { resolve('resolve') }, 0)
+    PromiseA.reject = function(reason) {
+      return new PromiseA(function(resolve, reject) {
+        reject(reason)
+      })
+    }
+    PromiseA.resolve = function(value) {
+      return new PromiseA(function(resolve, reject) {
+        resolve(value)
+      })
+    }
+
+    // test
+    const p = new PromiseA(function (resolve, reject) {
+      console.log(1)
+      setTimeout(function() { resolve(2) }, 1000)
     })
+    // const p = PromiseA.resolve(1)
     p.then((value) => {
-      console.log(value, 'value')
+      console.log(value, 'resolve1')
+      p = PromiseA.resolve('after all').then((value) => {
+        console.log(value)
+      })
+      a
     }, (reason) => {
-      console.log(reason, 'reason')
+      console.log(reason, 'reject1')
     })
-    console.log('sync code')
-    // p.resolve('123')
+    .then((value) => {
+      console.log(value, 'resolve2')
+      // return PromiseA(function (resolve, reject) {
+      //   setTimeout(() => resolve(value + 1), 2000)
+      // })
+      PromiseA.resolve('7').then((value) => {
+        console.log(9, 'resolve7')
+      })
+    }, p)
+    .then((value) => {
+      console.log(value, 'resolve3')
+      // debugger
+      // return PromiseA(function (resolve, reject) {
+      //   setTimeout(() => resolve(value + 1), 2000)
+      // })
+    }, (reason) => {
+      console.log(reason, 'reject3')
+      // return PromiseA(function (resolve, reject) {
+      //   setTimeout(() => resolve(reason + 1), 2000)
+      // })
+    })
+    .then((value) => {
+      console.log(value, 'resolve4')
+      // return PromiseA(function (resolve, reject) {
+      //   setTimeout(() => resolve(value + 1), 2000)
+      // })
+    })
+    .then((value) => {
+      console.log(value, 'resolve5')
+    })
+    // .catch(reason => {
+    //   console.log(reason, 'catch')
+    // })
+    console.log(5)
   </script>
 </body>
 </html>
